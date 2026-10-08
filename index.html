@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Steganografi</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f0f2f5;
+            color: #333;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+        }
+        h1 { text-align: center; color: #1a73e8; margin-bottom: 30px; }
+        .box {
+            background: #f8f9fa;
+            border: 2px dashed #cbd5e1;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+        }
+        h3 { margin-top: 0; color: #475569; }
+        textarea {
+            width: 100%;
+            height: 80px;
+            margin: 10px 0;
+            padding: 10px;
+            box-sizing: border-box;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            resize: vertical;
+        }
+        button {
+            background-color: #1a73e8;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 14px;
+        }
+        button:hover { background-color: #1557b0; }
+        input[type="file"] { margin-bottom: 15px; }
+        .result-img {
+            max-width: 100%;
+            margin-top: 15px;
+            display: none;
+            border-radius: 6px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .decrypted-text {
+            background: #e0f2fe;
+            padding: 15px;
+            border-left: 5px solid #0284c7;
+            border-radius: 4px;
+            font-weight: 500;
+            word-break: break-all;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Steganografi Gambar</h1>
+
+    <!-- BAGIAN 1: SEMBUNYIKAN PESAN (ENCODE) -->
+    <div class="box">
+        <h3>1. Sembunyikan Pesan ke Dalam Gambar (Encode)</h3>
+        <input type="file" id="encodeFile" /><br>
+        <textarea id="secretMessage" placeholder="Tulis pesan rahasia di sini..."></textarea><br>
+        <button onclick="encodeMessage()">Sembunyikan & Unduh Gambar</button>
+        <br>
+        <img id="encodedPreview" class="result-img" alt="Hasil Gambar">
+    </div>
+
+    <!-- BAGIAN 2: BACA PESAN (DECODE) -->
+    <div class="box">
+        <h3>2. Ekstrak Pesan dari Gambar (Decode)</h3>
+        <input type="file" id="decodeFile" /><br>
+        <button onclick="decodeMessage()">Ekstrak Pesan</button>
+        <div id="decodedArea" style="display:none; margin-top:15px;">
+            <p><strong>Pesan Rahasia Ditemukan:</strong></p>
+            <div id="decodedText" class="decrypted-text"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Penanda akhir pesan agar decoder tahu kapan harus berhenti membaca bit
+    const END_MARKER = "##END##";
+
+    // Fungsi konversi teks ke biner
+    function textToBin(text) {
+        return text.split('').map(char => {
+            return char.charCodeAt(0).toString(2).padStart(8, '0');
+        }).join('');
+    }
+
+    // Fungsi konversi biner ke teks
+    function binToText(bin) {
+        let text = '';
+        for (let i = 0; i < bin.length; i += 8) {
+            let byte = bin.substr(i, 8);
+            if (byte.length < 8) break;
+            text += String.fromCharCode(parseInt(byte, 2));
+        }
+        return text;
+    }
+
+    // PROSES SEMBUNYIKAN PESAN
+    function encodeMessage() {
+        const fileInput = document.getElementById('encodeFile');
+        const messageInput = document.getElementById('secretMessage').value;
+        
+        if (!fileInput.files[0]) return alert("Silakan pilih gambar terlebih dahulu!");
+        if (!messageInput) return alert("Isi pesan rahasia yang ingin disembunyikan!");
+
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            const img = new Image();
+            img.onload = function() {
+                // Buat canvas untuk memanipulasi piksel gambar
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                ctx.drawImage(img, 0, 0);
+
+                // Ambil data piksel RGBA
+                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imgData.data;
+
+                // Siapkan data biner (Pesan + Penanda Akhir)
+                const binaryMessage = textToBin(messageInput + END_MARKER);
+                
+                if (binaryMessage.length > data.length * 0.75) {
+                    return alert("Ukuran gambar terlalu kecil atau pesan terlalu panjang!");
+                }
+
+                // Masukkan bit biner ke LSB komponen warna gambar
+                for (let i = 0; i < binaryMessage.length; i++) {
+                    // Cari indeks data piksel (lewati nilai Alpha setiap kelipatan ke-4)
+                    let dataIdx = i + Math.floor(i / 3); 
+                    
+                    // Ubah bit terakhir jadi bit pesan rahasia
+                    data[dataIdx] = (data[dataIdx] & 0xFE) | parseInt(binaryMessage[i]);
+                }
+
+                // Gambar ulang canvas dengan data piksel baru yang sudah disisipi pesan
+                ctx.putImageData(imgData, 0, 0);
+
+                // Tampilkan hasil dan otomatis buat link unduh (Wajib format PNG agar bit tidak rusak akibat kompresi)
+                const resultImg = document.getElementById('encodedPreview');
+                const dataUrl = canvas.toDataURL('image/png');
+                resultImg.src = dataUrl;
+                resultImg.style.display = 'block';
+
+                const downloadLink = document.createElement('a');
+                downloadLink.href = dataUrl;
+                downloadLink.download = 'gambar_rahasia.png';
+                downloadLink.click();
+            };
+            img.src = event.target.result;
+        };
+        reader.readAsDataURL(fileInput.files[0]);
+    }
+
+    // PROSES BACA PESAN
+    function decodeMessage() {
+        const fileInput = document.getElementById('decodeFile');
+        if (!fileInput.files[0]) return alert("Silakan pilih gambar rahasia yang ingin diekstrak!");
+
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                ctx.drawImage(img, 0, 0);
+
+                const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imgData.data;
+
+                let binaryAccumulator = '';
+                let extractedText = '';
+
+                // Ekstrak bit LSB dari setiap piksel warna
+                for (let i = 0; i < data.length; i++) {
+                    if ((i + 1) % 4 === 0) continue; // Lewati channel Alpha (transparansi)
+
+                    binaryAccumulator += (data[i] & 1).toString();
+
+                    // Cek setiap kelipatan 8 bit (1 byte) untuk efisiensi
+                    if (binaryAccumulator.length >= 8) {
+                        let newChar = binToText(binaryAccumulator);
+                        extractedText += newChar;
+                        binaryAccumulator = ''; // reset akumulator
+
+                        // Jika mendeteksi marker penanda akhir, stop ekstraksi
+                        if (extractedText.includes(END_MARKER)) {
+                            extractedText = extractedText.replace(END_MARKER, '');
+                            break;
+                        }
+                    }
+                }
+
+                // Tampilkan pesan rahasia ke layar
+                document.getElementById('decodedArea').style.display = 'block';
+                document.getElementById('decodedText').innerText = extractedText || "[Tidak ada pesan rahasia terdeteksi atau marker rusak]";
+            };
+            img.src = event.target.result;
+        };
+        reader.readAsDataURL(fileInput.files[0]);
+    }
+</script>
+
+</body>
+</html>
